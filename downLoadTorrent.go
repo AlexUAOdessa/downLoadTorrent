@@ -37,6 +37,7 @@ const usageText = `Консольный торрент-клиент
                   пустые строки и строки, начинающиеся с #, пропускаются)
   -i    <сек>     интервал обновления экрана (по умолчанию 1)
   -bar  <ширина>  ширина полосы прогресса в символах (по умолчанию 25)
+  -ascii          рисовать полосу символами # и - (если █ ░ отображаются криво)
   -plain          простой вывод: каждое обновление новой строкой, без
                   полос и без управляющих ANSI-кодов (для старых консолей)
   -h, --help, /?  показать эту справку
@@ -90,6 +91,9 @@ func readList(path string) ([]string, error) {
 	return res, sc.Err()
 }
 
+// asciiBar — рисовать полосу простыми символами (задаётся ключом -ascii).
+var asciiBar bool
+
 // item — один торрент в списке загрузок и данные для расчёта его скорости.
 type item struct {
 	t    *torrent.Torrent // сам торрент
@@ -120,7 +124,11 @@ func bar(percent float64, width int) string {
 		percent = 100
 	}
 	filled := int(percent / 100 * float64(width))
-	return "[" + strings.Repeat("█", filled) + strings.Repeat("░", width-filled) + "]"
+	full, empty := "█", "░"
+	if asciiBar {
+		full, empty = "#", "-"
+	}
+	return "[" + strings.Repeat(full, filled) + strings.Repeat(empty, width-filled) + "]"
 }
 
 // speedStr форматирует скорость: КБ/с, а если больше 1024 — МБ/с.
@@ -153,8 +161,16 @@ func main() {
 	interval := flag.Float64("i", 1, "интервал обновления, сек")
 	barWidth := flag.Int("bar", 25, "ширина полосы прогресса")
 	plain := flag.Bool("plain", false, "простой построчный вывод")
+	flag.BoolVar(&asciiBar, "ascii", false, "полоса символами # и -")
 	flag.Usage = printUsage
 	flag.Parse()
+
+	// Включаем ANSI-режим консоли (нужно в Windows). Если не получилось
+	// (например, вывод в файл) — переходим на простой построчный режим.
+	if !*plain && !enableANSI() {
+		fmt.Println("Консоль не поддерживает ANSI, включён режим -plain.")
+		*plain = true
+	}
 
 	// 3. Собираем источники: из аргументов и (если задан -l) из файла.
 	sources := append([]string{}, flag.Args()...)
